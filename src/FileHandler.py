@@ -78,3 +78,10 @@ class FileHandler:
                 content_dict.update({elemente[1]: elemente[2]})
 
         self.write_json_file(file_name_json, content_dict)
+
+    def read_txt_file(self, file_path: str):
+
+        with open(file_path, encoding='utf-8') as f:
+            content = f.read()
+
+        return content

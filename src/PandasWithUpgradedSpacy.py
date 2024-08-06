@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
 import os
+import spacy
+
 
 from pathlib import Path
 from pandas import DataFrame
-
-
+from TextAnalyser import TextAnalyserNLP
+from LemmataTable import LemmataTable
 from Jsonstyle import read_json_file, write_json_file
 
 CODING_FILE_SETTINGS = {
@@ -36,6 +38,36 @@ def tag_coded_words(single_text, lemmata: DataFrame):
 
     return found_words
 
+def get_lemmata_by_spacy(single_text, nlp):
+    """
+    The nlp object creates a doc -object from a text, which can be analysed.
+    The text split up be predefined rules (that can be changed) into a list of tokens (symbols and words)
+    A doc object contains all tokens a gives the opportunity to analyse each token.
+    The lemma_ attribute represents the natural lemma / wordstem of each word. i.e. zuverlässige -> zuverlässig
+    :param single_text:
+    :param nlp: natural language processing object
+    :return:
+    """
+    doc = nlp(single_text)
+    lemma_liste = [token.lemma_ for token in doc]
+    lemma_string = "|".join(lemma_liste)
+
+    return lemma_string
+
+
+def tag_coded_lemmata(lemma_liste, lemmata: DataFrame):
+    lemma_liste = lemma_liste.split("|")
+    lemma_liste = [lemma.upper() for lemma in lemma_liste]
+    found_words = {}
+    for idx, row in lemmata.iterrows():
+        coded_word = row[CODING_FILE_SETTINGS.get("word")].upper()
+        if coded_word in lemma_liste:
+            words = found_words.get(row[CODING_FILE_SETTINGS.get("category")], [])
+            words.append(coded_word)
+            found_words.update({row[CODING_FILE_SETTINGS.get("category")]: words})
+
+    return found_words
+
 
 def get_coded_words(data, coding: str):
     return data.get(CODING_FILE_SETTINGS.get(coding), [])
@@ -60,7 +92,7 @@ def datei_format_umwandeln(file_name_txt, file_name_json):
     write_json_file(file_name_json, content_dict)
 
 
-def analyse_with_dataframe(data: dict, lemmata: DataFrame, Ort: str, Zeitpunkt: str):
+def analyse_with_dataframe(nlp_analyser, data: dict, lemmata: LemmataTable, Ort: str, Zeitpunkt: str):
 
     # create and fill data frame
     df = pd.DataFrame([], columns=["Titel", "Text", "Form", "Ort", "Datum","Lemmata"])
@@ -68,7 +100,7 @@ def analyse_with_dataframe(data: dict, lemmata: DataFrame, Ort: str, Zeitpunkt: 
     for title, text in data.items():
         df.loc[i] = [title, text, "", Ort, Zeitpunkt, []]
         i += 1
-    #print(df)
+
     # filter and sort dataframe bei Job titel gender decriptor
     x = df.Titel
     if_list = [
@@ -83,20 +115,17 @@ def analyse_with_dataframe(data: dict, lemmata: DataFrame, Ort: str, Zeitpunkt: 
         "Binnenmajuskel",
         "MWD"
     ]
-    df["Form"] = np.select(if_list, then_list, "Rest")
-    df["Lemmata"] = df.Text.apply(tag_coded_words, lemmata=lemmata)
-    df["Female_coded_words"] = df.Lemmata.apply(get_coded_words, coding="female")
-    df["Male_coded_words"] = df.Lemmata.apply(get_coded_words, coding="male")
-    df["Number_Female_coded_words"] = df.Lemmata.apply(count_coded_words, coding="female")
-    df["Number_Male_coded_words"] = df.Lemmata.apply(count_coded_words, coding="male")
-    #print(df)
 
-    #df.Form.value_counts()
+    df["CodedLemmata_spaCy"] = df.Text.apply(nlp_analyser.tag_coded_words__nlp_advanced, lemma_table=lemmata)
+    df["Female_coded_words_spaCy"] = df.CodedLemmata_spaCy.apply(get_coded_words, coding="female")
+    df["Male_coded_words_spaCy"] = df.CodedLemmata_spaCy.apply(get_coded_words, coding="male")
+    df["Number_Female_coded_words_spaCy"] = df.CodedLemmata_spaCy.apply(count_coded_words, coding="female")
+    df["Number_Male_coded_words_spaCy"] = df.CodedLemmata_spaCy.apply(count_coded_words, coding="male")
 
     #Gruppieren und Verteilung berechnen
-    df.sort_values(by="Number_Female_coded_words")
-    print(df.groupby("Form").Number_Female_coded_words.value_counts())
-    #print(df.groupby("Form").Number_Male_coded_words.value_counts())
+    #df.sort_values(by="Number_Female_coded_words")
+    #print(df.groupby("Form").Number_Female_coded_words.value_counts())
+    # print(df.groupby("Form").Number_Female_coded_words_spaCy.value_counts())
 
     return df
 
@@ -137,6 +166,7 @@ if __name__ == '__main__':
     #alle_wichtigen_dateien = texte_einlesen("\\Users\\icq-k\\Desktop\\Masterarbeit\\Skriptteil\\Korpusdateien")
     alle_wichtigen_dateien = texte_einlesen("C:\\Repos\\ProjektAnna\\res")
     problem_dateien = []
+    analyser = TextAnalyserNLP()
     for datei in alle_wichtigen_dateien:
 
         file_json_new = str(datei).replace(".txt", ".json")
@@ -152,12 +182,16 @@ if __name__ == '__main__':
                 file_name_json=file_json_new
             )
             data_dict = read_json_file(file_json_new)
-            lemmata_file = "../res/german_gender_bias_word_list.CSV"
-            info = lemmata_einlesen(lemmata_file)
-
+            lemmata_table = LemmataTable("../res/german_gender_bias_word_list.CSV")
 
             # run analysis
-            data_frame = analyse_with_dataframe(data=data_dict, lemmata=info, Ort=stadt_name, Zeitpunkt=zeitpunkt)
+            data_frame = analyse_with_dataframe(
+                nlp_analyser=analyser,
+                data=data_dict,
+                lemmata=lemmata_table,
+                Ort=stadt_name,
+                Zeitpunkt=zeitpunkt
+            )
 
             result_path = Path(f"{datei.parent}/{stadt_name}_result.csv")
             data_frame.to_csv(result_path, sep=",")
@@ -168,5 +202,3 @@ if __name__ == '__main__':
     print("Folgende Dateien hatten ein Problem:")
     for d in problem_dateien:
         print(d)
-
-

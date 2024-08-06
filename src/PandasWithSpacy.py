@@ -51,10 +51,13 @@ def get_lemmata_by_spacy(single_text, nlp):
     """
     doc = nlp(single_text)
     lemma_liste = [token.lemma_ for token in doc]
-    return lemma_liste
+    lemma_string = "|".join(lemma_liste)
+
+    return lemma_string
 
  ######## NEW #####
 def tag_coded_lemmata(lemma_liste, lemmata: DataFrame):
+    lemma_liste = lemma_liste.split("|")
     lemma_liste = [lemma.upper() for lemma in lemma_liste]
     found_words = {}
     for idx, row in lemmata.iterrows():
@@ -135,7 +138,7 @@ def analyse_with_dataframe(nlp, data: dict, lemmata: DataFrame, Ort: str, Zeitpu
     #Gruppieren und Verteilung berechnen
     df.sort_values(by="Number_Female_coded_words")
     print(df.groupby("Form").Number_Female_coded_words.value_counts())
-    print(df.groupby("Form").Number_Female_coded_words_spaCy.value_counts())  ######## NEW #####
+    print(df.groupby("Form").Number_Female_coded_words_spaCy.value_counts())
     #print(df.groupby("Form").Number_Male_coded_words.value_counts())
 
     return df
